@@ -512,7 +512,7 @@ function endGame(state, win) {
     } else {
       state.highScore = hs;
     }
-  } catch (_e) { /* localStorage tidak tersedia */ }
+  } catch (_e) { /* localStorage unavailable */ }
   sfx(win ? 'win' : 'lose');
 }
 

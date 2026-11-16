@@ -101,7 +101,7 @@ function costShort(def) {
 }
 
 // Nama pendek saluran untuk palet bawah (tanpa "Saluran" / "Air").
-const PIECE_SHORT = { straight: 'Lurus', bend: 'Belokan', tee: 'Pertigaan', gate: 'Pintu', splitter: 'Pembagi' };
+const PIECE_SHORT = { straight: 'Straight', bend: 'Corner', tee: 'T-Junction', gate: 'Gate', splitter: 'Splitter' };
 
 function fmtTime(sec) {
   const s = Math.max(0, Math.ceil(sec));

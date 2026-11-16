@@ -4,30 +4,30 @@
 
 export const PIECES = {
   straight: {
-    id: 'straight', name: 'Saluran Lurus', key: '1',
+    id: 'straight', name: 'Straight Channel', key: '1',
     cost: { timber: 1 }, ports: ['N', 'S'], rotatable: true,
-    desc: 'Air lurus dari utara ke selatan.',
+    desc: 'Water runs straight from north to south.',
   },
   bend: {
-    id: 'bend', name: 'Belokan', key: '2',
+    id: 'bend', name: 'Corner', key: '2',
     cost: { timber: 1 }, ports: ['N', 'E'], rotatable: true,
-    desc: 'Belokkan air 90 derajat.',
+    desc: 'Turn the water 90 degrees.',
   },
   tee: {
-    id: 'tee', name: 'Pertigaan', key: '3',
+    id: 'tee', name: 'T-Junction', key: '3',
     cost: { timber: 2 }, ports: ['N', 'E', 'S'], rotatable: true,
-    desc: 'Bagi air ke tiga arah.',
+    desc: 'Split the water three ways.',
   },
   gate: {
-    id: 'gate', name: 'Pintu Air', key: '4',
+    id: 'gate', name: 'Water Gate', key: '4',
     cost: { timber: 1, stone: 1 }, ports: ['N', 'S'], rotatable: true,
     isGate: true,
-    desc: 'Buka/tutup aliran. Pintu tertutup menahan air dan menaikkan tekanan!',
+    desc: 'Open or close the flow. A closed gate holds back water and builds pressure!',
   },
   splitter: {
-    id: 'splitter', name: 'Pembagi', key: '5',
+    id: 'splitter', name: 'Splitter', key: '5',
     cost: { stone: 2 }, ports: ['N', 'E', 'W'], rotatable: true,
-    desc: 'Bagi air ke kiri dan kanan.',
+    desc: 'Split the water left and right.',
   },
 };
 

@@ -24,7 +24,7 @@ export function createFlowState(grid) {
     pressure: new Float32Array(n),    // tekanan di sel
     overTime: new Float32Array(n),    // lama tekanan > BURST_PRESSURE
     houseTimer: new Float32Array(n),  // akumulasi waktu aliran di rumah
-    houseDamage: new Float32Array(n), // total damage yang diterima tiap rumah
+    houseDamage: new Float32Array(n), // total damage taken per house
   };
 }
 

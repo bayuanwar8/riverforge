@@ -4,20 +4,20 @@
 
 export const MILL_TYPES = {
   wood: {
-    id: 'wood', name: 'Kincir Kayu',
+    id: 'wood', name: 'Wood Mill',
     cost: { timber: 2 }, powerPerFlow: 1,
     desc: '+1 power per unit flow',
   },
   stone: {
-    id: 'stone', name: 'Kincir Batu',
+    id: 'stone', name: 'Stone Mill',
     cost: { timber: 1, stone: 2 }, powerPerFlow: 2,
     desc: '+2 power per unit flow',
   },
   forge: {
-    id: 'forge', name: 'Kincir Tempa',
+    id: 'forge', name: 'Forge Mill',
     cost: { timber: 2, stone: 3 }, powerPerFlow: 2, forgeMultiplier: 2,
     needsForgeNeighbor: true,
-    desc: 'Konversi power ke forge charge x2, harus di samping tempaan',
+    desc: 'Converts power to forge charge x2 — must sit beside the forge',
   },
 };
 

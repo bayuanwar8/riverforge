@@ -5,10 +5,10 @@
 import { pick, randRange } from './rng.js';
 
 export const WEATHER_DESC = {
-  clear: 'Cerah',
-  rain: 'Hujan — aliran +50%',
-  drought: 'Kekeringan — mata air setengah',
-  storm: 'Badai — petir merusak saluran',
+  clear: 'Clear',
+  rain: 'Rain — flow +50%',
+  drought: 'Drought — spring at half flow',
+  storm: 'Storm — lightning damages channels',
 };
 
 // Profil satu malam: daftar surge + cuaca + event.
@@ -51,17 +51,17 @@ export function nightProfile(night, rng) {
       if (type === 'beaver') {
         event = {
           type: 'beaver',
-          desc: 'Berang-berang nakal membangun dam di saluranmu!',
+          desc: 'A cheeky beaver builds a dam in your channel!',
         };
       } else if (type === 'debris') {
         event = {
           type: 'debris',
-          desc: 'Puing hanyut menyumbat satu saluran!',
+          desc: 'Drifting debris blocks a channel!',
         };
       } else {
         event = {
           type: 'storm',
-          desc: 'Petir menyambar dan menghancurkan satu saluran!',
+          desc: 'Lightning strikes and destroys a channel!',
         };
       }
     }
@@ -69,7 +69,7 @@ export function nightProfile(night, rng) {
 
   // Badai (cuaca storm) selalu membawa petir sebagai event.
   if (weather === 'storm' && !event) {
-    event = { type: 'storm', desc: 'Petir menyambar dan menghancurkan satu saluran!' };
+    event = { type: 'storm', desc: 'Lightning strikes and destroys a channel!' };
   }
 
   return { surges, weather, event };
@@ -124,6 +124,6 @@ export function applyEvent(grid, event, rng) {
 // Nama dramatis tiap malam (untuk HUD).
 export function nightName(night) {
   if (night === 7) return 'The Great Melt';
-  if (night === 1) return 'Malam Pertama';
-  return `Malam ${night}`;
+  if (night === 1) return 'The First Night';
+  return `Night ${night}`;
 }

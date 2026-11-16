@@ -4,14 +4,14 @@
 
 export const UPGRADES = [
   {
-    id: 'pipes2', name: '+2 Saluran', cost: 15,
-    desc: 'Stok saluran +2 tiap siang',
+    id: 'pipes2', name: '+2 Channels', cost: 15,
+    desc: '+2 channel stock each day',
     repeatable: true, maxRepeat: 3,
     apply(state) { state.stockBonus = (state.stockBonus || 0) + 2; },
   },
   {
-    id: 'homes', name: 'Perkuat Rumah', cost: 20,
-    desc: '+1 HP tiap rumah',
+    id: 'homes', name: 'Reinforce Houses', cost: 20,
+    desc: '+1 HP for every house',
     repeatable: true, maxRepeat: 3,
     apply(state) {
       state.houseBonus = (state.houseBonus || 0) + 1;
@@ -23,22 +23,22 @@ export const UPGRADES = [
     },
   },
   {
-    id: 'copper', name: 'Pipa Tembaga', cost: 25,
-    desc: 'Flow lewat kincir +25%',
+    id: 'copper', name: 'Copper Pipes', cost: 25,
+    desc: 'Flow through mills +25%',
     apply(state) { state.flowBonus = (state.flowBonus || 0) + 0.25; },
   },
   {
-    id: 'fastgate', name: 'Pintu Cepat', cost: 18,
-    desc: 'Cooldown toggle pintu setengah',
+    id: 'fastgate', name: 'Fast Gate', cost: 18,
+    desc: 'Gate toggle cooldown halved',
     apply(state) { state.gateCooldown = (state.gateCooldown || 1) * 0.5; },
   },
   {
-    id: 'spring2', name: 'Mata Air Kedua', cost: 40, minNight: 4,
-    desc: 'Sumber air kedua di sisi lembah',
+    id: 'spring2', name: 'Second Spring', cost: 40, minNight: 4,
+    desc: 'A second water source on the valley side',
     apply(state) { state.secondSpring = true; },
   },
   {
-    id: 'bellows', name: 'Bellow Tempaan', cost: 30,
+    id: 'bellows', name: 'Forge Bellows', cost: 30,
     desc: 'Forge charge +20%',
     apply(state) { state.forgeBonus = (state.forgeBonus || 0) + 0.2; },
   },
@@ -60,26 +60,26 @@ export function upgradeCost(state, id) {
 // Mengembalikan {ok, reason} — ok false kalau gagal (alasan di reason).
 export function buyUpgrade(state, id) {
   const def = findUpgrade(id);
-  if (!def) return { ok: false, reason: 'Upgrade tidak dikenal.' };
+  if (!def) return { ok: false, reason: 'Unknown upgrade.' };
   if (def.minNight && (state.night || 1) < def.minNight) {
-    return { ok: false, reason: `Baru tersedia mulai Malam ${def.minNight}.` };
+    return { ok: false, reason: `Available from Night ${def.minNight}.` };
   }
   const bought = (state.boughtUpgrades && state.boughtUpgrades[id]) || 0;
   if (!def.repeatable && bought >= 1) {
-    return { ok: false, reason: 'Sudah dibeli.' };
+    return { ok: false, reason: 'Already bought.' };
   }
   if (def.repeatable && def.maxRepeat && bought >= def.maxRepeat) {
-    return { ok: false, reason: `Maksimal ${def.maxRepeat}x pembelian.` };
+    return { ok: false, reason: `Max ${def.maxRepeat}x purchases.` };
   }
   const cost = upgradeCost(state, id);
   if ((state.power || 0) < cost) {
-    return { ok: false, reason: `Butuh ${cost} power (punya ${state.power || 0}).` };
+    return { ok: false, reason: `Needs ${cost} power (you have ${state.power || 0}).` };
   }
   state.power -= cost;
   if (!state.boughtUpgrades) state.boughtUpgrades = {};
   state.boughtUpgrades[id] = bought + 1;
   def.apply(state);
-  return { ok: true, reason: `${def.name} dibeli (${cost} power).` };
+  return { ok: true, reason: `${def.name} bought (${cost} power).` };
 }
 
 // Daftar upgrade yang masih bisa dibeli (untuk toko).
