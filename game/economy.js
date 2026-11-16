@@ -17,7 +17,9 @@ export const UPGRADES = [
       state.houseBonus = (state.houseBonus || 0) + 1;
       if (state.grid) {
         for (const cell of state.grid.cells) {
-          if (cell.house) cell.hp += 1;
+          // (B2) Only reinforce houses still standing — a destroyed
+          // house (hp 0) must stay destroyed, not come back to life.
+          if (cell.house && cell.hp > 0) cell.hp += 1;
         }
       }
     },
@@ -34,7 +36,7 @@ export const UPGRADES = [
   },
   {
     id: 'spring2', name: 'Second Spring', cost: 40, minNight: 4,
-    desc: 'A second water source on the valley side',
+    desc: '2nd source at (8,0) — feed it in via a T-Junction at (8,4), rot 2 (N,S,W)',
     apply(state) { state.secondSpring = true; },
   },
   {

@@ -10,7 +10,7 @@ import { initAudio, sfx, startAmbience, setMuted } from './audio.js';
 import { mulberry32, randRange } from './rng.js';
 import { createGrid, cellAt, inBounds } from './grid.js';
 import { PIECES } from './pieces.js';
-import { createFlowState, stepFlow } from './water.js';
+import { createFlowState, stepFlow, FORGE_SEEP_RATE } from './water.js';
 import { MILL_TYPES, canPlaceMill } from './mills.js';
 import { nightProfile, applyEvent } from './waves.js';
 import { buyUpgrade as economyBuy } from './economy.js';
@@ -65,6 +65,9 @@ function freshState(seed) {
     selectedPiece: 'straight',
     selectedMill: null,
     selectedCell: null,
+    // (C) Piece terpasang yang sedang dipilih (klik) — R memutarnya,
+    // X/Delete menghapusnya. null = tidak ada yang dipilih.
+    selectedPlaced: null,
     hoverCell: null,
     hoverButton: null,
     rot: 0,
@@ -86,6 +89,7 @@ function freshState(seed) {
     lastFlow: 0,
     nightsSurvived: 0,
     breakdown: { powerScore: 0, nightsScore: 0, flawlessBonus: 0, forgeBonusScore: 0 },
+    lossReason: null, // (B9) 'flood' | 'forge' | null — alasan kalah, untuk drawResults
     highScore: 0,
     showHowTo: false,
     showShop: false,
@@ -110,10 +114,11 @@ function setupLevel(state) {
   // grid.cells Builder A berbentuk flat (cols*rows) — JANGAN diubah ke 2D,
   // karena water.js & economy.js mengiterasi grid.cells sebagai array flat.
   state.grid = createGrid(COLS, ROWS);
-  // Desa: rumah-rumah berlentera.
+  // Desa: rumah-rumah berlentera. (B8) HP 4 + interval damage 1 dtk:
+  // rumah bertahan ~4 dtk aliran kontinu — ada waktu reaksi.
   for (const h of HOUSE_CELLS) {
     const c = cellAt(state.grid, h.x, h.y);
-    if (c) { c.house = true; c.hp = 2; }
+    if (c) { c.house = true; c.hp = 4; }
   }
   // Tempaan menempati sel pojok kanan bawah (blocked untuk saluran).
   const f = cellAt(state.grid, state.forgeCell.x, state.forgeCell.y);
@@ -178,19 +183,58 @@ function payCost(state, cost) {
 function makeActions(state, refs) {
   return {
     placePiece(x, y) {
-      if (state.phase !== 'build' || state.paused) return;
+      if (state.paused) return;
+      if (!inBounds(state.grid, x, y)) return;
+      const c = cellAt(state.grid, x, y);
+      if (!c) return;
+      // --- Perbaikan darurat tengah malam: klik sel rusak (puing) untuk
+      // membangun ulang salurannya DI TEMPAT, biaya 10 power. Tanpa ini
+      // satu malam bisa hilang total karena satu undian event. ---
+      if (state.phase === 'night') {
+        if (!c.debris) return;
+        if (c.piece) {
+          // Dam/puing di atas saluran yang masih utuh: bersihkan gratis.
+          c.debris = false;
+          c.blocked = false;
+          sfx('place');
+          spawnSplash(state, x, y, 3);
+          return;
+        }
+        // Saluran hancur (petir): bangun ulang dengan piece terpilih.
+        const REPAIR_COST = 10;
+        if ((state.power || 0) < REPAIR_COST) {
+          state.floaters.push({ x: 640, y: 300, text: 'Need ' + REPAIR_COST + ' power to rebuild!', life: 2 });
+          sfx('click');
+          return;
+        }
+        const repDef = PIECES[state.selectedPiece] || PIECES.straight;
+        state.power -= REPAIR_COST;
+        c.debris = false;
+        c.blocked = false;
+        c.broken = false;
+        c.piece = { type: repDef.id, rot: state.rot || 0, open: true };
+        state.floaters.push({ x: 640, y: 300, text: 'Emergency repair! -' + REPAIR_COST + ' power', life: 2 });
+        sfx('place');
+        spawnSplash(state, x, y, 4);
+        return;
+      }
+      if (state.phase !== 'build') return;
       const def = PIECES[state.selectedPiece];
       if (!def) { state.buildMsg = 'Pick a channel first (1-5).'; return; }
       if ((state.piecesLeft || 0) <= 0) { state.buildMsg = 'No pieces left today — buy more in the shop.'; sfx('click'); return; }
-      if (!inBounds(state.grid, x, y)) return;
-      const c = cellAt(state.grid, x, y);
-      if (!c || c.blocked || c.house || c.piece || c.mill || c.debris) {
+      // Mata air bukan tempat membangun — sama seperti mill (canPlaceMill
+      // menolak sel source): piece di sini terbuang sia-sia.
+      if (c.source || (state.springs || []).some((s) => s.x === x && s.y === y)) {
+        state.buildMsg = 'That\'s the spring — water starts here.'; return;
+      }
+      if (c.blocked || c.house || c.piece || c.mill || c.debris) {
         state.buildMsg = 'Can\'t build there.'; return;
       }
       if (!canAfford(state, def.cost)) { state.buildMsg = 'Not enough timber / stone.'; sfx('click'); return; }
       payCost(state, def.cost);
       c.piece = { type: def.id, rot: state.rot || 0, open: true };
       state.piecesLeft -= 1;
+      state.selectedPlaced = null; // selesai memasang: lepas pilihan piece lama
       state.buildMsg = '';
       sfx('place');
       spawnSplash(state, x, y, 4);
@@ -202,7 +246,7 @@ function makeActions(state, refs) {
       if (!def) return;
       if (!inBounds(state.grid, x, y)) return;
       let ok = true;
-      try { ok = canPlaceMill(state.grid, x, y, type); } catch (_e) { ok = true; }
+      try { ok = canPlaceMill(state.grid, x, y, type); } catch (_e) { ok = false; }
       const c = cellAt(state.grid, x, y);
       if (!ok || !c || c.blocked || c.house || c.piece || c.mill) {
         state.buildMsg = 'Mill can\'t go there.'; return;
@@ -236,7 +280,25 @@ function makeActions(state, refs) {
       }
     },
 
+    // (C) Hapus piece terpasang yang sedang dipilih — tanpa refund
+    // (sengaja: sederhana, tanpa edge case ekonomi). Hanya saat build.
+    removePiece(x, y) {
+      if (state.phase !== 'build' || state.paused) return;
+      if (!inBounds(state.grid, x, y)) return;
+      const c = cellAt(state.grid, x, y);
+      if (c && c.piece) {
+        const name = (PIECES[c.piece.type] && PIECES[c.piece.type].name) || c.piece.type;
+        c.piece = null;
+        state.selectedPlaced = null;
+        state.buildMsg = 'Removed ' + name + ' (no refund).';
+        sfx('click');
+      }
+    },
+
     clearDebris(x, y) {
+      // Guard fase: puing hanya bisa dibersihkan saat build / night
+      // (dan tidak saat pause) — bukan di title / win / loss.
+      if ((state.phase !== 'build' && state.phase !== 'night') || state.paused) return;
       if (!inBounds(state.grid, x, y)) return;
       const c = cellAt(state.grid, x, y);
       if (c && c.debris) {
@@ -254,6 +316,12 @@ function makeActions(state, refs) {
       const seed = state.seed;
       const fresh = freshState(seed);
       Object.assign(state, fresh);
+      // (C) Bel milestone tidak ikut ter-reset oleh Object.assign
+      // (freshState tidak mendefinisikannya) — bug yang sama dengan
+      // refs.restart(): tanpa ini bel 50%/90% tidak berbunyi lagi
+      // setelah mulai game baru dari title.
+      state._bell50 = false;
+      state._bell90 = false;
       setupLevel(state);
       state.phase = 'build';
       state.buildTimer = BUILD_SECONDS;
@@ -262,6 +330,7 @@ function makeActions(state, refs) {
     startNight() {
       if (state.phase !== 'build') return;
       state.showShop = false;
+      state.selectedPlaced = null; // pilihan piece tidak lanjut ke malam
       state.phase = 'night';
       state.powerThisNight = 0;
       state.damageThisNight = 0;
@@ -292,7 +361,13 @@ function makeActions(state, refs) {
         try { applied = applyEvent(state.grid, ev, state.rng); } catch (_e) { applied = null; }
         if (applied) sfx('break');
       }
-      if (state.secondSpring && !state.springs.some((s) => s.x === 8)) state.springs.push({ x: 8, y: 0 });
+      // (K2) Second Spring: tandai selnya sebagai source di grid — tanpa
+      // ini airnya terjebak di (8,0) karena cellExits menolak sel kosong.
+      if (state.secondSpring) {
+        if (!state.springs.some((s) => s.x === 8)) state.springs.push({ x: 8, y: 0 });
+        const sc = cellAt(state.grid, 8, 0);
+        if (sc) sc.source = true;
+      }
       try { state.flowState = createFlowState(state.grid); } catch (_e) { state.flowState = null; }
       sfx('alarm');
     },
@@ -381,6 +456,12 @@ function updateNight(state, dt) {
       state.surgeBoost = (surge && surge.volume) || 2;
       state.surgeTimer = 8; // durasi surge aktif
       state.surgesLeft -= 1;
+      // (K1) Tandai (6,0) sebagai source selama surge — tanpa ini air
+      // surge terjebak di sel kosong (cellExits menolak sel kosong) dan
+      // tidak pernah sampai ke mana-mana. (6,0) mengalir ke mata air
+      // utama (5,0), lalu menyusuri saluran yang ada.
+      const surgeCell = cellAt(state.grid, 6, 0);
+      if (surgeCell) surgeCell.source = true;
       sfx('alarm');
     }
   } else if (state.surgeActive) {
@@ -388,6 +469,16 @@ function updateNight(state, dt) {
     if (state.surgeTimer <= 0) {
       state.surgeActive = false;
       state.surgeBoost = 0;
+      // (K1) Surge selesai: keringkan sisa air di (6,0) ke mata air utama
+      // supaya tidak terjebak di sana, lalu lepas flag source-nya.
+      const surgeCell = cellAt(state.grid, 6, 0);
+      const mainCell = cellAt(state.grid, 5, 0);
+      if (surgeCell && mainCell && state.flowState) {
+        const i6 = 0 * COLS + 6, i5 = 0 * COLS + 5;
+        state.flowState.flow[i5] += state.flowState.flow[i6] || 0;
+        state.flowState.flow[i6] = 0;
+        surgeCell.source = false;
+      }
       if (state.surgesLeft > 0) {
         const next = state.surges[state.surges.length - state.surgesLeft];
         state.surgeTimer = (next && next.delaySec) || 15;
@@ -420,15 +511,17 @@ function updateNight(state, dt) {
       forgeBonus: state.forgeBonus || 0,
     }) || res;
   } catch (_e) { /* sim gagal: lanjutkan render */ }
-  state.lastFlow = res.totalFlow || 0;
+  state.lastFlow = res.flowRate || 0; // (K4) laju sebenarnya, unit/detik
   const gained = res.powerGenerated || 0;
   state.power += gained;
   state.powerThisNight += gained;
   state.score += gained;
   state.breakdown.powerScore += gained;
   // Forge charge: dari kincir tempa + rembesan kecil dari power biasa.
+  // (K4) gained & res.forgeCharge sudah per-detik x dt; rembesan memakai
+  // FORGE_SEEP_RATE dari water.js (satu sumber kebenaran dengan simulasi).
   state.forgeCharge = Math.min(FORGE_TARGET,
-    state.forgeCharge + (res.forgeCharge || 0) + gained * 0.08 * (1 + (state.forgeBonus || 0)));
+    state.forgeCharge + (res.forgeCharge || 0) + gained * FORGE_SEEP_RATE * (1 + (state.forgeBonus || 0)));
   if (state.forgeCharge >= 50 && !state._bell50) { state._bell50 = true; sfx('bell'); }
   if (state.forgeCharge >= 90 && !state._bell90) { state._bell90 = true; sfx('bell'); }
 
@@ -460,7 +553,7 @@ function updateNight(state, dt) {
   }
 
   // Kalah / malam selesai.
-  if (state.villageHP <= 0) { endGame(state, false); return; }
+  if (state.villageHP <= 0) { endGame(state, false, 'flood'); return; }
   if (state.nightTimer <= 0) endNight(state);
 }
 
@@ -472,7 +565,8 @@ function endNight(state) {
   if (flawless) {
     state.flawlessStreak += 1;
     state.combo = state.flawlessStreak + 1;
-    const bonus = 150 + 50 * state.flawlessStreak;
+    // (B6) Kombo BENAR-BENAR mengalikan skor: bonus flawless dikali combo.
+    const bonus = (150 + 50 * state.flawlessStreak) * state.combo;
     state.score += bonus;
     state.breakdown.flawlessBonus += bonus;
     state.floaters.push({ x: 640, y: 300, text: 'FLAWLESS NIGHT! +' + bonus, life: 2 });
@@ -481,10 +575,14 @@ function endNight(state) {
     state.flawlessStreak = 0;
     state.combo = 1;
   }
-  state.breakdown.forgeBonusScore = Math.floor(state.forgeCharge);
+  // (B3) forgeBonusScore HANYA diisi saat menang di endGame (di sana skor
+  // ditambah floor(forgeCharge)). Jangan isi di sini: dulu breakdown
+  // menampilkan bonus forge padahal skor tidak pernah ditambah — jumlah
+  // baris tidak sama dengan total.
 
   if (state.night >= 7) {
-    endGame(state, state.forgeCharge >= FORGE_TARGET);
+    endGame(state, state.forgeCharge >= FORGE_TARGET,
+      state.forgeCharge >= FORGE_TARGET ? null : 'forge');
     return;
   }
   // Istirahat antar malam: stok baru, kembali ke build.
@@ -500,10 +598,19 @@ function endNight(state) {
   sfx('win');
 }
 
-function endGame(state, win) {
+// (B3) Aritmetika skor: keempat baris breakdown SELALU berjumlah tepat
+// sama dengan total — baik menang maupun kalah. Bonus forge hanya masuk
+// skor (dan breakdown) kalau MENANG; kalau kalah forgeBonusScore = 0.
+// (B9) lossReason diteruskan ke state supaya drawResults bisa menampilkan
+// teks kalah yang benar ('flood' vs 'forge').
+function endGame(state, win, lossReason) {
   state.phase = win ? 'win' : 'loss';
   state.showShop = false;
-  if (win) state.score += Math.floor(state.forgeCharge);
+  state.lossReason = win ? null : (lossReason || 'flood');
+  if (win) {
+    state.score += Math.floor(state.forgeCharge);
+    state.breakdown.forgeBonusScore = Math.floor(state.forgeCharge);
+  }
   try {
     const hs = loadHighScore() || 0;
     if (Math.floor(state.score) > hs) {
@@ -582,14 +689,63 @@ function stageShot(state, shot) {
     state.forgeCharge = 38;
     state.weather = 'rain';
     state.weatherLabel = 'Rain — extra flow';
+    state.eventLabel = 'A cheeky beaver builds a dam in your channel!';
     state.surges = [{ delaySec: 12, volume: 3, speed: 1.2 }, { delaySec: 25, volume: 4, speed: 1.4 }];
-    state.surgesLeft = 1;
+    // Surge ke-2 sedang aktif: tidak ada lagi gelombang yang belum dimulai
+    // (surgesLeft dihitung saat gelombang dimulai — jadi 0 di sini, bukan 1).
+    state.surgesLeft = 0;
     state.surgeActive = true;
-    state.surgeBoost = 3;
+    state.surgeBoost = 4;
     state.surgeTimer = 6;
     state.nextSurgeIn = null;
     stageDemoChannels(state);
+    // (C) Event malam yang kelihatan: satu spur pendek di timur bend (8,4)
+    // yang diblokir dam berang-berang. Jalur utama ke kedua kincir tetap
+    // terbuka, jadi air tetap mengalir — dam-nya hanya memblokir spur.
+    stagePiece(state, 9, 4, 'straight', 1); // E-W
+    try {
+      const applied = applyEvent(state.grid,
+        { type: 'beaver', desc: state.eventLabel, x: 9, y: 4 }, state.rng);
+      if (!applied) {
+        const c = cellAt(state.grid, 9, 4);
+        if (c) { c.blocked = true; c.debris = true; }
+      }
+    } catch (_e) {
+      const c = cellAt(state.grid, 9, 4);
+      if (c) { c.blocked = true; c.debris = true; }
+    }
+    // Sel surge (6,0) ditandai sebagai source seperti saat surge
+    // sungguhan dimulai di updateNight.
+    const surgeCell = cellAt(state.grid, 6, 0);
+    if (surgeCell) surgeCell.source = true;
     try { state.flowState = createFlowState(state.grid); } catch (_e) { state.flowState = null; }
+    // (C) PRE-STEP aliran ~15 detik waktu simulasi SEBELUM shot: flowState
+    // yang baru dibuat masih kosong, jadi tanpa ini semua saluran tampil
+    // kering (flowAt = 0) dan kedua kincir diam — sungai tidak kelihatan.
+    if (state.flowState) {
+      const sources = [{ x: 5, y: 0, rate: 1 }, { x: 6, y: 0, rate: state.surgeBoost }];
+      for (let i = 0; i < 900; i++) {
+        try {
+          stepFlow(state.grid, state.flowState, 1 / 60, {
+            sourceCells: sources, weather: state.weather, rng: state.rng,
+          });
+        } catch (_e) { break; }
+      }
+      // Laju inflow: (mata air 1 + surge 4) x hujan 1,5 = 7,5 /s.
+      state.lastFlow = 7.5;
+    }
+    // Roda kincir di tengah putaran (bukan sudut awal) + angka "+power"
+    // melayang di atas kedua kincir. life panjang supaya tetap terlihat
+    // walau loop sempat berjalan beberapa detik virtual sebelum shot.
+    state.clock = 2;
+    const L = state.layout;
+    const floater = (gx, gy, text) => state.floaters.push({
+      x: L.gridX + gx * L.cell + L.cell / 2,
+      y: L.gridY + gy * L.cell - 8,
+      text, life: 60,
+    });
+    floater(7, 5, '+2 power');
+    floater(10, 8, '+4 power');
     return;
   }
   if (shot === 'win') {
@@ -598,9 +754,13 @@ function stageShot(state, shot) {
     state.forgeCharge = 100;
     state.score = 2450;
     state.highScore = 2450;
-    state.power = 1840;
-    state.villageHP = 3;
-    state.breakdown = { powerScore: 1840, nightsScore: 700, flawlessBonus: 450, forgeBonusScore: 100 };
+    state.power = 1200;
+    // Kelima rumah digambar hidup di staging ini — villageHP harus 5,
+    // bukan 3 (dulu hati di HUD tidak cocok dengan gambar rumah).
+    state.villageHP = 5;
+    state.lossReason = null;
+    // (B3) Baris breakdown harus berjumlah = total: 1200+700+450+100=2450.
+    state.breakdown = { powerScore: 1200, nightsScore: 700, flawlessBonus: 450, forgeBonusScore: 100 };
     stageDemoChannels(state);
     return;
   }
@@ -611,7 +771,10 @@ function stageShot(state, shot) {
     state.score = 830;
     state.highScore = 2450;
     state.villageHP = 0;
-    state.breakdown = { powerScore: 620, nightsScore: 400, flawlessBonus: 150, forgeBonusScore: 41 };
+    state.lossReason = 'flood';
+    // (B3) Kalah: bonus forge TIDAK masuk skor, jadi forgeBonusScore = 0.
+    // Baris breakdown berjumlah = total: 280+400+150+0=830.
+    state.breakdown = { powerScore: 280, nightsScore: 400, flawlessBonus: 150, forgeBonusScore: 0 };
     // Semua rumah hancur.
     for (const h of HOUSE_CELLS) {
       const c = cellAt(state.grid, h.x, h.y);
@@ -627,7 +790,13 @@ function boot() {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const params = new URLSearchParams(window.location.search);
-  const seed = Number(params.get('seed') || 1) || 1;
+  // (B7) Seed acak per permainan normal — semua permainan tidak lagi punya
+  // cuaca/event/surge identik. ?seed= tetap memaksa deterministik (untuk
+  // screenshot / replay).
+  const seedParam = params.get('seed');
+  const seed = seedParam
+    ? (Number(seedParam) || 1)
+    : ((Date.now() % 2147483646) + 1);
   const shot = params.get('shot');
 
   const state = freshState(seed);
@@ -645,6 +814,11 @@ function boot() {
       setupLevel(state);
       state.phase = 'build';
       state.buildTimer = BUILD_SECONDS;
+      // Bel milestone tidak ikut ter-reset oleh Object.assign (freshState
+      // tidak mendefinisikannya): tanpa ini bel 50%/90% tidak berbunyi
+      // lagi setelah restart.
+      state._bell50 = false;
+      state._bell90 = false;
       sfx('click');
     },
   };

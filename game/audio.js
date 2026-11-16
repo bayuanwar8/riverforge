@@ -106,6 +106,9 @@ export function setMuted(m) {
   muted = !!m;
   try {
     if (ambienceNodes) ambienceNodes.gain.gain.value = muted ? 0 : 0.035;
+    // Ambience belum pernah dibuat (misal startAmbience dipanggil saat
+    // muted, lalu di-unmute): buat sekarang supaya suara air kembali.
+    if (!muted && !ambienceNodes) startAmbience();
     if (ctx) void ctx.resume();
   } catch (_e) { /* abaikan */ }
 }

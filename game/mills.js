@@ -15,15 +15,21 @@ export const MILL_TYPES = {
   },
   forge: {
     id: 'forge', name: 'Forge Mill',
-    cost: { timber: 2, stone: 3 }, powerPerFlow: 2, forgeMultiplier: 2,
+    cost: { timber: 2, stone: 3 }, powerPerFlow: 2, forgeMultiplier: 0.1,
     needsForgeNeighbor: true,
-    desc: 'Converts power to forge charge x2 — must sit beside the forge',
+    desc: 'Converts flow to forge charge — must sit beside the forge',
   },
 };
 
-// Hitung output kincir dari jumlah flow yang melewatinya.
-// Mengembalikan {power, forgeCharge}. Kincir biasa: forgeCharge 0.
-// Kincir tempa: power diubah jadi forge charge (power x forgeMultiplier).
+// Hitung output kincir dari LAJU flow yang melewatinya (unit/detik).
+// Mengembalikan {power, forgeCharge} sebagai LAJU per detik — pemanggil
+// mengalikan dengan dt untuk mendapat pertambahan per tick (lihat water.js).
+// Kincir biasa: forgeCharge 0. Kincir tempa: power diubah jadi forge
+// charge (power x forgeMultiplier). Multiplier disetel supaya satu Forge
+// Mill saja TIDAK langsung memenangkan game (K4): dengan aliran penuh
+// ~0,5 unit/detik, laju forge-nya ~0,1/detik — butuh dukungan toko
+// (Copper/Bellows/Second Spring) untuk menang sekitar malam 6, dan
+// layout demo tanpa forge mill tetap bisa menang tipis di malam 7.
 export function millOutput(millType, flow) {
   const def = MILL_TYPES[millType];
   if (!def || flow <= 0) return { power: 0, forgeCharge: 0 };

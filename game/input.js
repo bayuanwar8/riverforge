@@ -50,11 +50,13 @@ function dispatchButton(state, actions, btn) {
   if (id.startsWith('mill:')) {
     state.selectedMill = id.slice(5);
     state.selectedPiece = null;
+    state.selectedPlaced = null; // pilih kincir: lepas pilihan piece lama
     return;
   }
   if (id.startsWith('piece:')) {
     state.selectedPiece = id.slice(6);
     state.selectedMill = null;
+    state.selectedPlaced = null; // pilih saluran: R kembali mengatur NEXT
     return;
   }
 }
@@ -73,8 +75,22 @@ export function bindInput(canvas, state, actions) {
       if (!cell) return;
       state.selectedCell = cell;
       const c = state.grid ? cellAt(state.grid, cell.x, cell.y) : null;
-      if (c && c.debris) { actions.clearDebris(cell.x, cell.y); return; }
+      if (c && c.debris) {
+        // Malam: klik sel rusak = perbaikan darurat (placePiece menangani
+        // rebuild / clear). Siang: bersihkan puing seperti biasa.
+        if (state.phase === 'night') { actions.placePiece(cell.x, cell.y); return; }
+        actions.clearDebris(cell.x, cell.y);
+        return;
+      }
       if (c && c.piece && c.piece.type === 'gate') { actions.selectGate(cell.x, cell.y); return; }
+      // (C) Klik piece terpasang (bukan gate) saat build = PILIH piece itu:
+      // R memutarnya, X/Delete menghapusnya. Klik sel kosong / memasang
+      // piece baru melepas pilihan ini.
+      if (state.phase === 'build' && c && c.piece) {
+        state.selectedPlaced = { x: cell.x, y: cell.y };
+        return;
+      }
+      if (state.phase === 'build') state.selectedPlaced = null;
       if (state.selectedMill) {
         if (actions.placeMill) actions.placeMill(cell.x, cell.y, state.selectedMill);
         return;
@@ -101,6 +117,7 @@ export function bindInput(canvas, state, actions) {
         if (id && PIECES[id]) {
           state.selectedPiece = id;
           state.selectedMill = null;
+          state.selectedPlaced = null; // pilih saluran: R kembali mengatur NEXT
         }
         return;
       }
@@ -109,11 +126,20 @@ export function bindInput(canvas, state, actions) {
         return;
       }
       if (k === 'r' || k === 'R') {
-        // Putar piece di sel terpilih, atau putar orientasi penempatan berikutnya.
-        if (state.selectedCell && actions.rotatePiece) {
-          actions.rotatePiece(state.selectedCell.x, state.selectedCell.y);
-        } else {
-          state.rot = ((state.rot || 0) + 1) % 4;
+        // (C) Kalau ada piece terpasang yang dipilih, R memutar PIECE ITU.
+        // Kalau tidak ada yang dipilih, R tetap mengatur orientasi
+        // penempatan BERIKUTNYA (perilaku Builder B — jangan dipecah).
+        if (state.phase === 'build' && state.selectedPlaced && actions.rotatePiece) {
+          actions.rotatePiece(state.selectedPlaced.x, state.selectedPlaced.y);
+          return;
+        }
+        state.rot = ((state.rot || 0) + 1) % 4;
+        return;
+      }
+      if (k === 'x' || k === 'X' || k === 'Delete') {
+        // (C) Hapus piece terpasang yang dipilih (tanpa refund).
+        if (state.phase === 'build' && state.selectedPlaced && actions.removePiece) {
+          actions.removePiece(state.selectedPlaced.x, state.selectedPlaced.y);
         }
         return;
       }

@@ -24,8 +24,12 @@ export function nightProfile(night, rng) {
   const surges = [];
   for (let i = 0; i < surgeCount; i++) {
     surges.push({
-      // Surge pertama datang setelah jeda; berikutnya berjarak ~20-30 dtk.
-      delaySec: 8 + i * randRange(rng, 20, 30),
+      // (K5) delaySec adalah JEDA ANTAR surge (dipakai main.js sebagai timer
+      // tunggu setelah surge sebelumnya selesai), BUKAN waktu absolut.
+      // Dulu 8 + i*rand(20,30) membuat surge ke-3 malam 7 baru tiba ~120 dtk
+      // — padahal malam 7 cuma 95 dtk. Sekarang jeda 12-18 dtk: malam 7
+      // surge ~8 dtk, ~28-34 dtk, ~48-60 dtk — ketiganya muat dalam 95 dtk.
+      delaySec: i === 0 ? 8 : randRange(rng, 12, 18),
       volume: Math.round((1.0 + i * 0.5) * scale * 10) / 10,
       speed: Math.round((1.0 + i * 0.2) * scale * 10) / 10,
     });

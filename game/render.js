@@ -178,6 +178,25 @@ function drawPiece(ctx, state, x, y, cell, t) {
     ctx.fillStyle = '#e8d27a';
     ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, Math.PI * 2); ctx.fill();
   }
+  if (cell.debris) {
+    // Dam berang-berang / puing: tumpukan kayu melintang di atas saluran
+    // + label DAM — tanpa ini dam hanya berupa lingkaran coklat yang
+    // tertutup gambar saluran di atasnya.
+    ctx.fillStyle = '#6b4a2f';
+    for (let i = -1; i <= 1; i++) {
+      ctx.fillRect(c.x - 17, c.y + i * 7 - 3, 34, 6);
+    }
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.strokeRect(c.x - 17, c.y + i * 7 - 3, 34, 6);
+    }
+    ctx.fillStyle = '#ffd98c';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DAM', c.x, c.y - 20);
+    ctx.textAlign = 'left';
+  }
 }
 
 function drawHouse(ctx, state, x, y, cell, t) {
@@ -221,8 +240,11 @@ function drawMill(ctx, state, x, y, cell, t) {
   const L = state.layout;
   const c = cellCenter(L, x, y);
   const flow = flowOf(state, x, y);
-  const spinning = flow > 0.05;
-  const speed = spinning ? 1 + flow * 2 : 0;
+  // (C) Ambang putar diturunkan: kincir mengonsumsi 90% stok airnya tiap
+  // tick, jadi stok steady-state-nya cuma ~0,001-0,007 — ambang lama 0,05
+  // membuat kincir TIDAK PERNAH berputar walau air mengalir deras.
+  const spinning = flow > 0.0005;
+  const speed = spinning ? 1.5 + flow * 3 : 0;
   const ang = (state.clock || 0) * speed;
   // Dudukan.
   ctx.fillStyle = '#4a3a26';
@@ -248,10 +270,16 @@ function drawMill(ctx, state, x, y, cell, t) {
   ctx.fillStyle = '#3a2c18';
   ctx.beginPath(); ctx.arc(c.x, c.y - 4, 4, 0, Math.PI * 2); ctx.fill();
   if (spinning) {
-    ctx.fillStyle = 'rgba(120,220,255,0.8)';
+    // Label "+power" melayang di samping kincir yang berputar — bukti
+    // visual bahwa kincir menghasilkan power, bukan sekadar hiasan.
+    // Di kiri kincir (bukan kanan): kincir batu bersebelahan dengan
+    // tempaan, label di kanan tertutup bangunan tempaan.
+    const bob = Math.sin(t * 3 + x * 1.7 + y) * 2;
+    ctx.fillStyle = 'rgba(140,225,255,0.95)';
     ctx.font = 'bold 11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('+', c.x + 18, c.y - 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('+power', c.x - 16, c.y - 16 + bob);
+    ctx.textAlign = 'left';
   }
 }
 
@@ -280,9 +308,11 @@ function drawForge(ctx, state, t) {
   const f = state.forgeCell || { x: 11, y: 8 };
   const c = cellCenter(L, f.x, f.y);
   const charge = Math.max(0, Math.min(100, state.forgeCharge || 0));
-  const glowR = 30 + charge * 0.55 + 4 * Math.sin(t * 2);
-  const g = ctx.createRadialGradient(c.x, c.y - 6, 6, c.x, c.y - 6, Math.max(30, glowR));
-  g.addColorStop(0, 'rgba(255,170,60,' + (0.25 + charge / 130).toFixed(2) + ')');
+  // (C) Glow diperbesar supaya tempaan terbaca sekilas di lembar kontak
+  // kecil: radius tumbuh lebih cepat dengan charge.
+  const glowR = 34 + charge * 0.85 + 4 * Math.sin(t * 2);
+  const g = ctx.createRadialGradient(c.x, c.y - 6, 6, c.x, c.y - 6, Math.max(34, glowR));
+  g.addColorStop(0, 'rgba(255,170,60,' + (0.3 + charge / 110).toFixed(2) + ')');
   g.addColorStop(1, 'rgba(255,120,30,0)');
   ctx.fillStyle = g;
   ctx.fillRect(c.x - glowR - 10, c.y - glowR - 20, (glowR + 10) * 2, (glowR + 20) * 2);
