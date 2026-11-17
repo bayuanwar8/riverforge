@@ -34,6 +34,9 @@ const dossier = buildDossier(out, {
   game_max_bytes: 50331648,
   game_path_max_bytes: 1000,
 });
-writeFileSync(join(out, 'dossier.json'), JSON.stringify(dossier, null, 2));
+// buildDossier mengembalikan Uint8Array berupa canonical JSON bytes,
+// jadi tulis langsung tanpa JSON.stringify (JSON.stringify pada Uint8Array
+// malah menghasilkan {"0":123,"1":34,...} yang tidak bisa dibaca harness).
+writeFileSync(join(out, 'dossier.json'), dossier);
 
 console.log('RIVERFORGE build selesai -> ' + out);
